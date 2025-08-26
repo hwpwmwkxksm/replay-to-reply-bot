@@ -281,9 +281,9 @@ def stop():
             bot_stop_event.set()
             bot_thread.join(timeout=10)
             add_log('Stop requested')
-        return jsonify({'ok':True,'msg':'Bot stopping'})
-    else:
-        return jsonify({'ok':False,'msg':'Bot not running'})
+            return jsonify({'ok':True,'msg':'Bot stopping'})
+        else:
+            return jsonify({'ok':False,'msg':'Bot not running'})
 
 @app.route('/logs')
 def get_logs():
