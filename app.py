@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify, render_template_string
+from flask_cors import CORS
 import threading, time, requests, os
 import random
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024  # 2 MB upload limit
 
 # ---------------------- Globals ----------------------
@@ -36,7 +38,7 @@ def graph_get(path, params=None):
         params = {}
     params['access_token'] = EAAD_TOKEN
     try:
-        r = requests.get(f"{GRAPH_BASE}/{path}", params=params, timeout=15)
+        r = requests.get(f"{GRAPH_BASE}/{path}", params=params, timeout=30)  # Increased timeout to 30 seconds
         return r.json()
     except Exception as e:
         add_log(f"GET error {path}: {e}")
@@ -47,7 +49,7 @@ def graph_post(path, data=None):
         data = {}
     params = {'access_token': EAAD_TOKEN}
     try:
-        r = requests.post(f"{GRAPH_BASE}/{path}", params=params, json=data, timeout=15)
+        r = requests.post(f"{GRAPH_BASE}/{path}", params=params, json=data, timeout=30)  # Increased timeout to 30 seconds
         return r.json()
     except Exception as e:
         add_log(f"POST error {path}: {e}")
@@ -251,27 +253,35 @@ def set_token():
         EAAD_TOKEN = token
         seen_messages.clear()
         add_log('EAAD_TOKEN updated via UI')
-    return jsonify({'ok':True,'msg':'Token saved'})
+    return jsonify({'ok': True, 'msg': 'Token saved'})
 
 @app.route('/start', methods=['POST'])
 def start():
     global bot_thread, bot_stop_event, THREAD_ID, POLL_INTERVAL, HATER_NAME, MESSAGE_LIST
     form = request.form
-    THREAD_ID = form.get('thread','').strip()
-    HATER_NAME = form.get('hater','').strip()
-    POLL_INTERVAL = int(form.get('interval',5))
+    THREAD_ID = form.get('thread', '').strip()
+    HATER_NAME = form.get('hater', '').strip()
+    POLL_INTERVAL = int(form.get('interval', 5))
     file = request.files.get('file')
     if file:
-        MESSAGE_LIST = [line.strip() for line in file.read().decode('utf-8').splitlines() if line.strip()]
+        try:
+            content = file.read().decode('utf-8')
+            MESSAGE_LIST = [line.strip() for line in content.splitlines() if line.strip()]
+            add_log(f"Message list loaded: {MESSAGE_LIST}")
+        except Exception as e:
+            add_log(f"Error reading file: {e}")
+            return jsonify({'ok': False, 'msg': f'Error reading file: {e}'})
 
     with state_lock:
         if bot_thread and bot_thread.is_alive():
-            return jsonify({'ok':False,'msg':'Bot already running'})
+            return jsonify({'ok': False, 'msg': 'Bot already running'})
+        if not THREAD_ID or not EAAD_TOKEN:
+            return jsonify({'ok': False, 'msg': 'THREAD_ID or EAAD_TOKEN missing'})
         bot_stop_event = threading.Event()
         bot_thread = threading.Thread(target=poll_loop, args=(bot_stop_event, lambda: POLL_INTERVAL), daemon=True)
         bot_thread.start()
     add_log('Bot started')
-    return jsonify({'ok':True,'msg':'Bot started'})
+    return jsonify({'ok': True, 'msg': 'Bot started'})
 
 @app.route('/stop', methods=['POST'])
 def stop():
@@ -281,9 +291,9 @@ def stop():
             bot_stop_event.set()
             bot_thread.join(timeout=10)
             add_log('Stop requested')
-            return jsonify({'ok':True,'msg':'Bot stopping'})
+            return jsonify({'ok': True, 'msg': 'Bot stopping'})
         else:
-            return jsonify({'ok':False,'msg':'Bot not running'})
+            return jsonify({'ok': False, 'msg': 'Bot not running'})
 
 @app.route('/logs')
 def get_logs():
